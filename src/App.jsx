@@ -1447,6 +1447,44 @@ export default function Simulation3D_UXClean(){
   const D1Cy = (D1Ly + D1Ry) / 2;
   
   // ===== Import/Export Excel Functions =====
+  const downloadTemplate = React.useCallback(() => {
+    // Create template with parameter names and example data
+    const templateData = [
+      { Parameter: 'D1R_x', Test1: -5152, Test2: -5150, Test3: 0 },
+      { Parameter: 'D1R_y', Test1: -1246, Test2: 1248, Test3: 0 },
+      { Parameter: 'D1L_x', Test1: -5150, Test2: -5150, Test3: 0 },
+      { Parameter: 'D1L_y', Test1: 1248, Test2: 1248, Test3: 0 },
+      { Parameter: 'CrabAngle', Test1: -0.81, Test2: 0, Test3: 0 },
+      { Parameter: 'ChassisID', Test1: 1, Test2: 0, Test3: 0 },
+      { Parameter: 'DriveAngle', Test1: 9.99, Test2: 0, Test3: 0 },
+      { Parameter: 'SymmetryAngle', Test1: 7.22, Test2: 0, Test3: 0 }
+    ];
+    
+    const ws = XLSX.utils.json_to_sheet(templateData);
+    
+    // Auto-adjust column widths
+    ws['!cols'] = [
+      { wch: 18 }, // Parameter
+      { wch: 15 }, // Test1
+      { wch: 15 }, // Test2
+      { wch: 15 }  // Test3
+    ];
+    
+    // Style header row
+    for (let col = 0; col < 4; col++) {
+      const cellRef = XLSX.utils.encode_col(col) + '1';
+      ws[cellRef].s = {
+        fill: { fgColor: { rgb: 'FF4F46E5' } },
+        font: { bold: true, color: { rgb: 'FFFFFFFF' } },
+        alignment: { horizontal: 'center', vertical: 'center' }
+      };
+    }
+    
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template");
+    XLSX.writeFile(wb, "targetplacement_template.xlsx");
+  }, []);
+
   const handleImportExcel = React.useCallback((e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1641,6 +1679,28 @@ export default function Simulation3D_UXClean(){
         <div style={{...S.card, backgroundColor:"#f0fdf4", borderColor:"#86efac"}}>
           <div style={{fontSize:13, fontWeight:600, color:UI.textPrimary, marginBottom:10}}>📁 Import/Export Excel</div>
           <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
+            <button
+              onClick={downloadTemplate}
+              style={{
+                flex:"1",
+                minWidth:150,
+                padding:"8px 12px",
+                backgroundColor:"#10b981",
+                color:"white",
+                borderRadius:"8px",
+                border:"none",
+                cursor:"pointer",
+                fontSize:12,
+                fontWeight:600,
+                textAlign:"center",
+                transition:"all 0.2s ease",
+                "&:hover": { backgroundColor:"#059669" }
+              }}
+              onMouseEnter={e => e.target.style.backgroundColor = "#059669"}
+              onMouseLeave={e => e.target.style.backgroundColor = "#10b981"}
+            >
+              📋 Télécharger template
+            </button>
             <label style={{
               flex:"1",
               minWidth:150,
@@ -1665,7 +1725,7 @@ export default function Simulation3D_UXClean(){
             </label>
           </div>
           <div style={{fontSize:11, color:UI.textSecondary, marginTop:8, lineHeight:1.4}}>
-            Format attendu: Colonne 1 = nom paramètre, Colonne 2+ = valeurs/tests
+            1️⃣ Téléchargez le template • 2️⃣ Remplissez vos données • 3️⃣ Chargez le fichier pour traiter
           </div>
         </div>
       </div>
