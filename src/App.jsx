@@ -1446,6 +1446,98 @@ export default function Simulation3D_UXClean(){
   const D1Cx = (D1Lx + D1Rx) / 2;
   const D1Cy = (D1Ly + D1Ry) / 2;
   
+  // ===== Import/Export Excel Functions =====
+  const handleImportExcel = React.useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = event.target?.result;
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        
+        // Parse input file format
+        // Row 0: headers (Parameter name, value, then multiple test cases)
+        // Rows 1+: parameter names and values, then test data
+        
+        if (!rows || rows.length < 8) {
+          alert('Format invalide. Au moins 8 paramètres attendus.');
+          return;
+        }
+        
+        // Extract parameters from column 1 (index 1)
+        const params = {};
+        params.D1Rx = safeNum(rows[0]?.[1]);
+        params.D1Ry = safeNum(rows[1]?.[1]);
+        params.D1Lx = safeNum(rows[2]?.[1]);
+        params.D1Ly = safeNum(rows[3]?.[1]);
+        params.CrabAngle = safeNum(rows[4]?.[1]);
+        params.ChassisID = safeNum(rows[5]?.[1]);
+        params.DriveAngle = safeNum(rows[6]?.[1]);
+        params.SymmetryAngle = safeNum(rows[7]?.[1]);
+        
+        // Extract test cases from columns 2+ (index 2+)
+        const testCases = [];
+        for (let col = 2; col < rows[0].length; col++) {
+          const testCase = {};
+          for (let row = 0; row < Math.min(8, rows.length); row++) {
+            const paramName = ['D1Rx', 'D1Ry', 'D1Lx', 'D1Ly', 'CrabAngle', 'ChassisID', 'DriveAngle', 'SymmetryAngle'][row];
+            testCase[paramName] = safeNum(rows[row]?.[col]);
+          }
+          if (Object.values(testCase).some(v => v !== 0)) {
+            testCases.push(testCase);
+          }
+        }
+        
+        // Process test cases and calculate outputs
+        const results = [];
+        testCases.forEach(test => {
+          const beta = test.SymmetryAngle || params.SymmetryAngle || 0;
+          const d1Lx = test.D1Lx || params.D1Lx || D1Lx;
+          const d1Ly = test.D1Ly || params.D1Ly || D1Ly;
+          const d1Rx = test.D1Rx || params.D1Rx || D1Rx;
+          const d1Ry = test.D1Ry || params.D1Ry || D1Ry;
+          
+          // Compute base position
+          const basePos = computeBase(d1Lx, d1Ly, d1Rx, d1Ry, FLRx, FLRy, FLRz, beta);
+          
+          // Use fixed angles for computation
+          const rayDir = computeRay(eps, alpha/60, zeta);
+          const targetPos = computeTarget(basePos, rayDir, V);
+          
+          // Compute output angles
+          const outAngles = computeOutputAngles(basePos, targetPos, alpha/60);
+          
+          results.push({
+            X: targetPos.x,
+            Y: targetPos.y,
+            Z: targetPos.z,
+            Azimuth: outAngles.etaDeg,
+            Elevation: outAngles.elevDeg,
+            Roll: 0 // Default roll
+          });
+        });
+        
+        // Export results to Excel
+        if (results.length > 0) {
+          const ws = XLSX.utils.json_to_sheet(results);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "Résultats");
+          XLSX.writeFile(wb, "targetplacement_results.xlsx");
+          alert(`✅ ${results.length} cas traités et exportés`);
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Erreur lors du traitement du fichier');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }, [D1Lx, D1Ly, D1Rx, D1Ry, FLRx, FLRy, FLRz, alpha, eps, zeta, V]);
+
   // Helper functions for SVG
   const polarPointScreen = (cx, cy, r, angleDeg) => {
     const rad = deg2rad(angleDeg);
@@ -1544,6 +1636,37 @@ export default function Simulation3D_UXClean(){
           <span style={{...S.badge, marginRight:0}}>�️ Vue</span>
           <SegButton active={viewMode==='3d'} onClick={()=>setViewMode('3d')}>Vue 3D</SegButton>
           <SegButton active={viewMode==='2d'} onClick={()=>setViewMode('2d')}>Vue 2D</SegButton>
+        </div>
+
+        <div style={{...S.card, backgroundColor:"#f0fdf4", borderColor:"#86efac"}}>
+          <div style={{fontSize:13, fontWeight:600, color:UI.textPrimary, marginBottom:10}}>📁 Import/Export Excel</div>
+          <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
+            <label style={{
+              flex:"1",
+              minWidth:150,
+              padding:"8px 12px",
+              backgroundColor:UI.accent,
+              color:"white",
+              borderRadius:"8px",
+              cursor:"pointer",
+              fontSize:12,
+              fontWeight:600,
+              textAlign:"center",
+              transition:"all 0.2s ease",
+              border:"2px solid transparent"
+            }}>
+              📥 Charger fichier
+              <input 
+                type="file" 
+                accept=".xlsx,.xls" 
+                onChange={handleImportExcel}
+                style={{display:"none"}}
+              />
+            </label>
+          </div>
+          <div style={{fontSize:11, color:UI.textSecondary, marginTop:8, lineHeight:1.4}}>
+            Format attendu: Colonne 1 = nom paramètre, Colonne 2+ = valeurs/tests
+          </div>
         </div>
       </div>
 
