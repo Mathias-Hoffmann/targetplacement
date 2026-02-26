@@ -1448,19 +1448,16 @@ export default function Simulation3D_UXClean(){
   
   // ===== Import/Export Excel Functions =====
   const downloadTemplate = React.useCallback(() => {
-    // Create template with parameter names and example data
+    // Create template matching the input format
     const templateData = [
-      { Parameter: 'FLRx', Test1: 0, Test2: 0, Test3: 0 },
-      { Parameter: 'FLRy', Test1: 0, Test2: 0, Test3: 0 },
-      { Parameter: 'FLRz', Test1: 0, Test2: 0, Test3: 0 },
-      { Parameter: 'D1R_x', Test1: -5152, Test2: -5150, Test3: 0 },
-      { Parameter: 'D1R_y', Test1: -1246, Test2: 1248, Test3: 0 },
-      { Parameter: 'D1L_x', Test1: -5150, Test2: -5150, Test3: 0 },
-      { Parameter: 'D1L_y', Test1: 1248, Test2: 1248, Test3: 0 },
-      { Parameter: 'CrabAngle', Test1: -0.81, Test2: 0, Test3: 0 },
-      { Parameter: 'ChassisID', Test1: 1, Test2: 0, Test3: 0 },
-      { Parameter: 'DriveAngle', Test1: 9.99, Test2: 0, Test3: 0 },
-      { Parameter: 'SymmetryAngle', Test1: 7.22, Test2: 0, Test3: 0 }
+      { Parameter: 'D1R_x', DefaultValue: '', Test1: '', Test2: '', Test3: '' },
+      { Parameter: 'D1R_y', DefaultValue: '', Test1: '', Test2: '', Test3: '' },
+      { Parameter: 'D1L_x', DefaultValue: '', Test1: '', Test2: '', Test3: '' },
+      { Parameter: 'D1L_y', DefaultValue: '', Test1: '', Test2: '', Test3: '' },
+      { Parameter: 'CrabAngle', DefaultValue: '', Test1: '', Test2: '', Test3: '' },
+      { Parameter: 'ChassisID', DefaultValue: '', Test1: '', Test2: '', Test3: '' },
+      { Parameter: 'DriveAngle', DefaultValue: '', Test1: '', Test2: '', Test3: '' },
+      { Parameter: 'SymmetryAngle', DefaultValue: '', Test1: '', Test2: '', Test3: '' }
     ];
     
     const ws = XLSX.utils.json_to_sheet(templateData);
@@ -1468,19 +1465,22 @@ export default function Simulation3D_UXClean(){
     // Auto-adjust column widths
     ws['!cols'] = [
       { wch: 18 }, // Parameter
+      { wch: 15 }, // DefaultValue
       { wch: 15 }, // Test1
       { wch: 15 }, // Test2
       { wch: 15 }  // Test3
     ];
     
     // Style header row
-    for (let col = 0; col < 4; col++) {
+    for (let col = 0; col < 5; col++) {
       const cellRef = XLSX.utils.encode_col(col) + '1';
-      ws[cellRef].s = {
-        fill: { fgColor: { rgb: 'FF4F46E5' } },
-        font: { bold: true, color: { rgb: 'FFFFFFFF' } },
-        alignment: { horizontal: 'center', vertical: 'center' }
-      };
+      if (ws[cellRef]) {
+        ws[cellRef].s = {
+          fill: { fgColor: { rgb: 'FF4F46E5' } },
+          font: { bold: true, color: { rgb: 'FFFFFFFF' } },
+          alignment: { horizontal: 'center', vertical: 'center' }
+        };
+      }
     }
     
     const wb = XLSX.utils.book_new();
@@ -1505,31 +1505,28 @@ export default function Simulation3D_UXClean(){
         // Row 0: headers (Parameter name, value, then multiple test cases)
         // Rows 1+: parameter names and values, then test data
         
-        if (!rows || rows.length < 11) {
-          alert('Format invalide. Au moins 11 paramètres attendus (FLRx, FLRy, FLRz, D1Rx, D1Ry, D1Lx, D1Ly, CrabAngle, ChassisID, DriveAngle, SymmetryAngle).');
+        if (!rows || rows.length < 8) {
+          alert('Format invalide. Au moins 8 paramètres attendus (D1R_x, D1R_y, D1L_x, D1L_y, CrabAngle, ChassisID, DriveAngle, SymmetryAngle).');
           return;
         }
         
-        // Extract parameters from column 1 (index 1)
+        // Extract parameters from column 1 (index 1) - DefaultValue
         const params = {};
-        params.FLRx = safeNum(rows[0]?.[1]);
-        params.FLRy = safeNum(rows[1]?.[1]);
-        params.FLRz = safeNum(rows[2]?.[1]);
-        params.D1Rx = safeNum(rows[3]?.[1]);
-        params.D1Ry = safeNum(rows[4]?.[1]);
-        params.D1Lx = safeNum(rows[5]?.[1]);
-        params.D1Ly = safeNum(rows[6]?.[1]);
-        params.CrabAngle = safeNum(rows[7]?.[1]);
-        params.ChassisID = safeNum(rows[8]?.[1]);
-        params.DriveAngle = safeNum(rows[9]?.[1]);
-        params.SymmetryAngle = safeNum(rows[10]?.[1]);
+        params.D1Rx = safeNum(rows[0]?.[1]);
+        params.D1Ry = safeNum(rows[1]?.[1]);
+        params.D1Lx = safeNum(rows[2]?.[1]);
+        params.D1Ly = safeNum(rows[3]?.[1]);
+        params.CrabAngle = safeNum(rows[4]?.[1]);
+        params.ChassisID = safeNum(rows[5]?.[1]);
+        params.DriveAngle = safeNum(rows[6]?.[1]);
+        params.SymmetryAngle = safeNum(rows[7]?.[1]);
         
         // Extract test cases from columns 2+ (index 2+)
         const testCases = [];
         for (let col = 2; col < rows[0].length; col++) {
           const testCase = {};
-          for (let row = 0; row < Math.min(11, rows.length); row++) {
-            const paramName = ['FLRx', 'FLRy', 'FLRz', 'D1Rx', 'D1Ry', 'D1Lx', 'D1Ly', 'CrabAngle', 'ChassisID', 'DriveAngle', 'SymmetryAngle'][row];
+          for (let row = 0; row < Math.min(8, rows.length); row++) {
+            const paramName = ['D1Rx', 'D1Ry', 'D1Lx', 'D1Ly', 'CrabAngle', 'ChassisID', 'DriveAngle', 'SymmetryAngle'][row];
             testCase[paramName] = safeNum(rows[row]?.[col]);
           }
           if (Object.values(testCase).some(v => v !== 0)) {
@@ -1540,9 +1537,9 @@ export default function Simulation3D_UXClean(){
         // Process test cases and calculate outputs
         const results = [];
         testCases.forEach(test => {
-          const flrx = test.FLRx ?? params.FLRx ?? FLRx;
-          const flry = test.FLRy ?? params.FLRy ?? FLRy;
-          const flrz = test.FLRz ?? params.FLRz ?? FLRz;
+          const flrx = FLRx; // Use default FLRx
+          const flry = FLRy; // Use default FLRy
+          const flrz = FLRz; // Use default FLRz
           const beta = test.SymmetryAngle ?? params.SymmetryAngle ?? 0;
           const d1Lx = test.D1Lx ?? params.D1Lx ?? D1Lx;
           const d1Ly = test.D1Ly ?? params.D1Ly ?? D1Ly;
