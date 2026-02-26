@@ -1450,6 +1450,9 @@ export default function Simulation3D_UXClean(){
   const downloadTemplate = React.useCallback(() => {
     // Create template with parameter names and example data
     const templateData = [
+      { Parameter: 'FLRx', Test1: 0, Test2: 0, Test3: 0 },
+      { Parameter: 'FLRy', Test1: 0, Test2: 0, Test3: 0 },
+      { Parameter: 'FLRz', Test1: 0, Test2: 0, Test3: 0 },
       { Parameter: 'D1R_x', Test1: -5152, Test2: -5150, Test3: 0 },
       { Parameter: 'D1R_y', Test1: -1246, Test2: 1248, Test3: 0 },
       { Parameter: 'D1L_x', Test1: -5150, Test2: -5150, Test3: 0 },
@@ -1502,28 +1505,31 @@ export default function Simulation3D_UXClean(){
         // Row 0: headers (Parameter name, value, then multiple test cases)
         // Rows 1+: parameter names and values, then test data
         
-        if (!rows || rows.length < 8) {
-          alert('Format invalide. Au moins 8 paramètres attendus.');
+        if (!rows || rows.length < 11) {
+          alert('Format invalide. Au moins 11 paramètres attendus (FLRx, FLRy, FLRz, D1Rx, D1Ry, D1Lx, D1Ly, CrabAngle, ChassisID, DriveAngle, SymmetryAngle).');
           return;
         }
         
         // Extract parameters from column 1 (index 1)
         const params = {};
-        params.D1Rx = safeNum(rows[0]?.[1]);
-        params.D1Ry = safeNum(rows[1]?.[1]);
-        params.D1Lx = safeNum(rows[2]?.[1]);
-        params.D1Ly = safeNum(rows[3]?.[1]);
-        params.CrabAngle = safeNum(rows[4]?.[1]);
-        params.ChassisID = safeNum(rows[5]?.[1]);
-        params.DriveAngle = safeNum(rows[6]?.[1]);
-        params.SymmetryAngle = safeNum(rows[7]?.[1]);
+        params.FLRx = safeNum(rows[0]?.[1]);
+        params.FLRy = safeNum(rows[1]?.[1]);
+        params.FLRz = safeNum(rows[2]?.[1]);
+        params.D1Rx = safeNum(rows[3]?.[1]);
+        params.D1Ry = safeNum(rows[4]?.[1]);
+        params.D1Lx = safeNum(rows[5]?.[1]);
+        params.D1Ly = safeNum(rows[6]?.[1]);
+        params.CrabAngle = safeNum(rows[7]?.[1]);
+        params.ChassisID = safeNum(rows[8]?.[1]);
+        params.DriveAngle = safeNum(rows[9]?.[1]);
+        params.SymmetryAngle = safeNum(rows[10]?.[1]);
         
         // Extract test cases from columns 2+ (index 2+)
         const testCases = [];
         for (let col = 2; col < rows[0].length; col++) {
           const testCase = {};
-          for (let row = 0; row < Math.min(8, rows.length); row++) {
-            const paramName = ['D1Rx', 'D1Ry', 'D1Lx', 'D1Ly', 'CrabAngle', 'ChassisID', 'DriveAngle', 'SymmetryAngle'][row];
+          for (let row = 0; row < Math.min(11, rows.length); row++) {
+            const paramName = ['FLRx', 'FLRy', 'FLRz', 'D1Rx', 'D1Ry', 'D1Lx', 'D1Ly', 'CrabAngle', 'ChassisID', 'DriveAngle', 'SymmetryAngle'][row];
             testCase[paramName] = safeNum(rows[row]?.[col]);
           }
           if (Object.values(testCase).some(v => v !== 0)) {
@@ -1534,14 +1540,17 @@ export default function Simulation3D_UXClean(){
         // Process test cases and calculate outputs
         const results = [];
         testCases.forEach(test => {
-          const beta = test.SymmetryAngle || params.SymmetryAngle || 0;
-          const d1Lx = test.D1Lx || params.D1Lx || D1Lx;
-          const d1Ly = test.D1Ly || params.D1Ly || D1Ly;
-          const d1Rx = test.D1Rx || params.D1Rx || D1Rx;
-          const d1Ry = test.D1Ry || params.D1Ry || D1Ry;
+          const flrx = test.FLRx ?? params.FLRx ?? FLRx;
+          const flry = test.FLRy ?? params.FLRy ?? FLRy;
+          const flrz = test.FLRz ?? params.FLRz ?? FLRz;
+          const beta = test.SymmetryAngle ?? params.SymmetryAngle ?? 0;
+          const d1Lx = test.D1Lx ?? params.D1Lx ?? D1Lx;
+          const d1Ly = test.D1Ly ?? params.D1Ly ?? D1Ly;
+          const d1Rx = test.D1Rx ?? params.D1Rx ?? D1Rx;
+          const d1Ry = test.D1Ry ?? params.D1Ry ?? D1Ry;
           
           // Compute base position
-          const basePos = computeBase(d1Lx, d1Ly, d1Rx, d1Ry, FLRx, FLRy, FLRz, beta);
+          const basePos = computeBase(d1Lx, d1Ly, d1Rx, d1Ry, flrx, flry, flrz, beta);
           
           // Use fixed angles for computation
           const rayDir = computeRay(eps, alpha/60, zeta);
@@ -1551,12 +1560,15 @@ export default function Simulation3D_UXClean(){
           const outAngles = computeOutputAngles(basePos, targetPos, alpha/60);
           
           results.push({
-            X: targetPos.x,
-            Y: targetPos.y,
-            Z: targetPos.z,
-            Azimuth: outAngles.etaDeg,
-            Elevation: outAngles.elevDeg,
-            Roll: 0 // Default roll
+            FLRx: flrx,
+            FLRy: flry,
+            FLRz: flrz,
+            X: targetPos.x.toFixed(2),
+            Y: targetPos.y.toFixed(2),
+            Z: targetPos.z.toFixed(2),
+            Azimuth: outAngles.etaDeg.toFixed(4),
+            Elevation: outAngles.elevDeg.toFixed(4),
+            Roll: 0
           });
         });
         
