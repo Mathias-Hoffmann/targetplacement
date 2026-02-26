@@ -1,5 +1,6 @@
 import * as React from "react";
 import * as XLSX from "xlsx";
+import * as THREE from "three";
 
 // Mini simulation interactive (React + Tailwind)
 // VERSION: arcs d'angles PLEINS + rotation de la cible
@@ -12,33 +13,766 @@ import * as XLSX from "xlsx";
 
 function deg2rad(d) { return (d * Math.PI) / 180; }
 function rad2deg(r) { return (r * 180) / Math.PI; }
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 function safeNum(v, fallback=0) {
   const n = typeof v === "string" ? Number(v.toString().replace(",", ".")) : Number(v);
   return Number.isFinite(n) ? n : fallback;
 }
 
+// UI Colors and styles
+const UI = {
+  subtext: "#6b7280",
+  green: "rgba(16,185,129,0.95)",
+  blue: "#0284c7",
+  blueLite: "rgba(2,132,199,0.6)",
+  red: "rgba(239,68,68,0.9)",
+  accent: "#4f46e5",
+  accentLight: "#e0e7ff",
+  border: "#e5e7eb",
+  borderLight: "#f3f4f6",
+  textPrimary: "#111827",
+  textSecondary: "#6b7280",
+  bgLight: "#f9fafb",
+  bgWhite: "#ffffff",
+};
+
+const S = {
+  card: {
+    padding: "16px",
+    backgroundColor: UI.bgWhite,
+    border: `1px solid ${UI.border}`,
+    borderRadius: "12px",
+    marginBottom: "12px",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+    transition: "all 0.2s ease",
+  },
+  cardHover: {
+    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+    borderColor: UI.accent,
+  },
+  pad: {
+    padding: "16px",
+  },
+  sectionTitle: {
+    fontWeight: 600,
+    fontSize: 14,
+    color: UI.textPrimary,
+    letterSpacing: "0.5px",
+  },
+  grid2: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, 1fr)",
+    gap: "12px",
+  },
+  hGroup: {
+    display: "flex",
+    gap: "10px",
+    marginBottom: "12px",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+  badge: {
+    display: "inline-block",
+    padding: "6px 12px",
+    backgroundColor: UI.accentLight,
+    color: UI.accent,
+    borderRadius: "6px",
+    fontSize: "11px",
+    fontWeight: 600,
+    marginRight: "8px",
+    textTransform: "uppercase",
+    letterSpacing: "0.5px",
+  },
+  resetBtn: {
+    padding: "10px 16px",
+    backgroundColor: UI.accent,
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    fontSize: "13px",
+    fontWeight: 600,
+    cursor: "pointer",
+    flexGrow: 1,
+    transition: "all 0.2s ease",
+    boxShadow: "0 2px 8px rgba(79, 70, 229, 0.2)",
+  },
+  resetBtnHover: {
+    backgroundColor: "#4338ca",
+    boxShadow: "0 4px 12px rgba(79, 70, 229, 0.3)",
+    transform: "translateY(-1px)",
+  },
+  splitWrap: {
+    display: "flex",
+    height: "100vh",
+    backgroundColor: UI.bgWhite,
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+  },
+  left: {
+    flex: "0 0 auto",
+    overflowY: "auto",
+    borderRight: `1px solid ${UI.border}`,
+    backgroundColor: UI.bgLight,
+    width: "380px",
+  },
+  splitter: {
+    width: "1px",
+    backgroundColor: UI.border,
+    cursor: "col-resize",
+    userSelect: "none",
+    transition: "background-color 0.2s",
+    "&:hover": {
+      backgroundColor: UI.accent,
+    },
+  },
+  right: {
+    flex: "1 1 auto",
+    overflowY: "auto",
+    display: "flex",
+    flexDirection: "column",
+    backgroundColor: UI.bgWhite,
+  },
+};
+
 function SliderRow({ label, value, min= -5000, max=5000, step=1, onChange, unit="" }) {
+  const percentage = ((value - min) / (max - min)) * 100;
   return (
-    <div style={S.card}>
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", cursor:"pointer"}} onClick={()=>setOpen(!open)}>
-        <div style={S.sectionTitle}>{title}</div>
-        <div style={{fontSize:18, color:UI.subtext}}>{open?"▾":"▸"}</div>
+    <div style={{
+      ...S.card,
+      padding: "14px",
+      background: "linear-gradient(135deg, #ffffff 0%, #f9fafb 100%)",
+    }}>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"10px"}}>
+        <label style={{fontSize:"13px", fontWeight:600, color: UI.textPrimary, letterSpacing:"0.3px"}}>{label}</label>
+        <span style={{fontSize:"12px", color: UI.accent, fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontWeight:600}}>{value.toFixed(2)}{unit}</span>
       </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full accent-blue-600"
-      />
+      <div style={{position:"relative", marginBottom:"8px"}}>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(e) => onChange(parseFloat(e.target.value))}
+          style={{
+            width:"100%",
+            height:"6px",
+            borderRadius:"3px",
+            background: `linear-gradient(to right, ${UI.accent} 0%, ${UI.accent} ${percentage}%, #e5e7eb ${percentage}%, #e5e7eb 100%)`,
+            outline:"none",
+            WebkitAppearance:"none",
+            cursor:"pointer",
+          }}
+        />
+        <style>{`
+          input[type="range"]::-webkit-slider-thumb {
+            WebkitAppearance: none;
+            width: 18px;
+            height: 18px;
+            borderRadius: 50%;
+            background: ${UI.accent};
+            cursor: pointer;
+            boxShadow: 0 2px 6px rgba(79, 70, 229, 0.3);
+            transition: all 0.2s;
+          }
+          input[type="range"]::-webkit-slider-thumb:hover {
+            boxShadow: 0 4px 10px rgba(79, 70, 229, 0.5);
+            transform: scale(1.1);
+          }
+          input[type="range"]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            borderRadius: 50%;
+            background: ${UI.accent};
+            border: none;
+            cursor: pointer;
+            boxShadow: 0 2px 6px rgba(79, 70, 229, 0.3);
+          }
+        `}</style>
+      </div>
       <input
         type="number"
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full border rounded-md px-2 py-1 text-xs"
+        style={{
+          width:"100%",
+          padding:"8px 10px",
+          border: `1px solid ${UI.border}`,
+          borderRadius:"6px",
+          fontSize:"12px",
+          color: UI.textPrimary,
+          fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+          transition:"border-color 0.2s",
+          boxSizing:"border-box",
+        }}
+        onFocus={(e) => e.target.style.borderColor = UI.accent}
+        onBlur={(e) => e.target.style.borderColor = UI.border}
       />
+    </div>
+  );
+}
+
+function SegButton({ active, onClick, children }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: "8px 14px",
+        backgroundColor: active ? UI.accent : UI.border,
+        color: active ? "white" : UI.textSecondary,
+        border: "none",
+        borderRadius: "6px",
+        fontSize: "12px",
+        fontWeight: 600,
+        cursor: "pointer",
+        transition: "all 0.2s ease",
+        boxShadow: active ? `0 2px 8px rgba(79, 70, 229, 0.2)` : "none",
+      }}
+      onMouseEnter={(e) => {
+        if (!active) {
+          e.target.style.backgroundColor = "#d1d5db";
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!active) {
+          e.target.style.backgroundColor = UI.border;
+        }
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Canvas3D({ 
+  basePos = { x: 0, y: 0, z: 0 }, 
+  targetPos = { x: 1000, y: 0, z: 400 },
+  boxPos = { x: 1000, y: 0, z: 400 },
+  boxDims = { sx: 900, sy: 600, sz: 500 },
+  boxRot = { yaw: 0, pitch: 0, roll: 0 },
+  orbit = { yaw: 0.6, pitch: 0.45, radius: 3000 },
+  outAngles = { etaDeg: 0, thetaDeg: 90, elevDeg: 0, V: 1000 },
+}) {
+  const containerRef = React.useRef(null);
+  const sceneRef = React.useRef(null);
+  const cameraRef = React.useRef(null);
+  const rendererRef = React.useRef(null);
+  const boxRef = React.useRef(null);
+  
+
+
+
+  // Interactive camera control state
+  const cameraControlRef = React.useRef({
+    yaw: orbit.yaw,
+    pitch: orbit.pitch,
+    radius: orbit.radius,
+  });
+
+
+
+
+
+  const dragStateRef = React.useRef({
+    isDragging: false,
+    lastX: 0,
+    lastY: 0,
+  });
+
+  React.useEffect(() => {
+    if (!containerRef.current) return;
+
+    // Sync camera control with orbit props
+    cameraControlRef.current.yaw = orbit.yaw;
+    cameraControlRef.current.pitch = orbit.pitch;
+    cameraControlRef.current.radius = orbit.radius;
+
+    // Scene setup
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xf9fafb);
+    sceneRef.current = scene;
+
+    // Camera
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 100000);
+    cameraRef.current = camera;
+
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    containerRef.current.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
+
+    // Lights
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    scene.add(ambientLight);
+    
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(5000, 4000, 3000);
+    scene.add(directionalLight);
+
+    // Axes helper
+    const axesHelper = new THREE.AxesHelper(1000);
+    scene.add(axesHelper);
+
+    // Grid helper
+    const gridHelper = new THREE.GridHelper(10000, 50, 0xcccccc, 0xeeeeee);
+    gridHelper.position.y = 0;
+    scene.add(gridHelper);
+
+    // ===== Angle visualization =====
+    // Create torus segments to show azimuth (η) and elevation angles
+    const angleRadius = 1500;
+    
+
+
+    // Azimuth arc (around base, in XY plane)
+    const aziRadius = angleRadius;
+    const aziTubeRadius = 30;
+    const aziGeom = new THREE.TorusGeometry(aziRadius, aziTubeRadius, 16, 100);
+    const aziMaterial = new THREE.MeshPhongMaterial({ color: 0x3b82f6, emissive: 0x1e40af, transparent: true, opacity: 0.6 });
+    const aziTorus = new THREE.Mesh(aziGeom, aziMaterial);
+    aziTorus.position.set(basePos.x, 0, basePos.y);
+    aziTorus.rotation.x = Math.PI / 2; // Rotate to XY plane
+    scene.add(aziTorus);
+    
+    // Direction line from base towards target (shows azimuth direction)
+    const rayLength = Math.max(1000, outAngles.V || 1000);
+    const rayDir = new THREE.Vector3(
+      Math.cos(deg2rad(outAngles.etaDeg || 0)),
+      0,
+      Math.sin(deg2rad(outAngles.etaDeg || 0))
+    ).normalize();
+    const rayGeom = new THREE.BufferGeometry();
+    rayGeom.setAttribute('position', new THREE.BufferAttribute(
+      new Float32Array([
+        basePos.x, basePos.z, basePos.y,
+        basePos.x + rayDir.x * rayLength, basePos.z + rayDir.z * rayLength * 0.5, basePos.y + rayDir.z * rayLength
+      ]),
+      3
+    ));
+    const rayMaterial = new THREE.LineBasicMaterial({ color: 0x06b6d4, linewidth: 4 });
+    const rayLine = new THREE.Line(rayGeom, rayMaterial);
+    scene.add(rayLine);
+    
+    // Elevation arc (showing polar angle θ)
+    const elevRadius = angleRadius * 0.8;
+    const elevTubeRadius = 30;
+    const elevGeom = new THREE.TorusGeometry(elevRadius, elevTubeRadius, 16, 100);
+    const elevMaterial = new THREE.MeshPhongMaterial({ color: 0x10b981, emissive: 0x059669, transparent: true, opacity: 0.6 });
+    const elevTorus = new THREE.Mesh(elevGeom, elevMaterial);
+    elevTorus.position.set(basePos.x, basePos.z, basePos.y);
+    // Rotate to show elevation plane (YZ plane relative to direction)
+    const etaRad = deg2rad(outAngles.etaDeg || 0);
+    elevTorus.rotation.z = etaRad;
+    scene.add(elevTorus);
+
+    // Create angle labels using canvas texture
+    function createTextTexture(text, color = '#fff') {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'transparent';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.font = 'Bold 48px Arial';
+      ctx.fillStyle = color;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+      const texture = new THREE.CanvasTexture(canvas);
+      return texture;
+    }
+
+    // Azimuth label
+    const aziLabelGeom = new THREE.PlaneGeometry(400, 200);
+    const aziLabelTex = createTextTexture(`η = ${outAngles.etaDeg.toFixed(1)}°`, '#0284c7');
+    const aziLabelMat = new THREE.MeshBasicMaterial({ map: aziLabelTex, transparent: true });
+    const aziLabel = new THREE.Mesh(aziLabelGeom, aziLabelMat);
+    aziLabel.position.set(basePos.x + 1800 * Math.cos(etaRad), basePos.z + 200, basePos.y + 1800 * Math.sin(etaRad));
+    aziLabel.lookAt(basePos.x, basePos.z + 200, basePos.y);
+    scene.add(aziLabel);
+
+    // Elevation label
+    const elevLabelGeom = new THREE.PlaneGeometry(400, 200);
+    const elevLabelTex = createTextTexture(`θ = ${outAngles.thetaDeg.toFixed(1)}°`, '#10b981');
+    const elevLabelMat = new THREE.MeshBasicMaterial({ map: elevLabelTex, transparent: true });
+    const elevLabel = new THREE.Mesh(elevLabelGeom, elevLabelMat);
+    elevLabel.position.set(basePos.x - 800, basePos.z + angleRadius * 0.8 * 0.6, basePos.y);
+    elevLabel.lookAt(basePos.x, basePos.z, basePos.y);
+    scene.add(elevLabel);
+
+    // Elevation display label
+    const elevDisplayGeom = new THREE.PlaneGeometry(400, 200);
+    const elevDisplayTex = createTextTexture(`Elev = ${outAngles.elevDeg.toFixed(1)}°`, '#f59e0b');
+    const elevDisplayMat = new THREE.MeshBasicMaterial({ map: elevDisplayTex, transparent: true });
+    const elevDisplay = new THREE.Mesh(elevDisplayGeom, elevDisplayMat);
+    elevDisplay.position.set(basePos.x + 800, basePos.z + angleRadius * 0.8 * 0.6, basePos.y);
+    elevDisplay.lookAt(basePos.x, basePos.z, basePos.y);
+    scene.add(elevDisplay);
+
+    // Base point (green sphere)
+    const baseGeometry = new THREE.SphereGeometry(100, 32, 32);
+    const baseMaterial = new THREE.MeshPhongMaterial({ color: 0x10b981 });
+    const basePoint = new THREE.Mesh(baseGeometry, baseMaterial);
+    basePoint.position.set(basePos.x, basePos.z, basePos.y);
+    scene.add(basePoint);
+
+    // Target point (red sphere)
+    const targetGeometry = new THREE.SphereGeometry(80, 32, 32);
+    const targetMaterial = new THREE.MeshPhongMaterial({ color: 0xef4444 });
+    const targetPoint = new THREE.Mesh(targetGeometry, targetMaterial);
+    targetPoint.position.set(targetPos.x, targetPos.z, targetPos.y);
+    scene.add(targetPoint);
+
+    // Line from base to target
+    const lineGeometry = new THREE.BufferGeometry();
+    lineGeometry.setAttribute('position', new THREE.BufferAttribute(
+      new Float32Array([basePos.x, basePos.z, basePos.y, targetPos.x, targetPos.z, targetPos.y]),
+      3
+    ));
+    const lineMaterial = new THREE.LineBasicMaterial({ color: 0x0284c7, linewidth: 3 });
+    const line = new THREE.Line(lineGeometry, lineMaterial);
+    scene.add(line);
+
+    // Box (pavé droit)
+    const boxGeometry = new THREE.BoxGeometry(boxDims.sx, boxDims.sz, boxDims.sy);
+    const boxMaterial = new THREE.MeshPhongMaterial({ 
+      color: 0x6366f1, 
+      emissive: 0x4f46e5,
+      wireframe: false,
+      opacity: 0.8,
+      transparent: true,
+    });
+    const box = new THREE.Mesh(boxGeometry, boxMaterial);
+    box.position.set(boxPos.x, boxPos.z, boxPos.y);
+    
+    // Apply rotations (Euler angles)
+    box.rotation.order = 'YXZ';
+    box.rotation.y = boxRot.yaw;
+    box.rotation.x = boxRot.pitch;
+    box.rotation.z = boxRot.roll;
+    
+    // Add wireframe
+    const edges = new THREE.EdgesGeometry(boxGeometry);
+    const wireframe = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x1e293b, linewidth: 2 }));
+    box.add(wireframe);
+    
+    scene.add(box);
+    boxRef.current = box;
+
+    // ===== Enhanced rotation visualization for box =====
+    // Yaw rotation arc (around Z axis - red)
+    const yawRadius = 1200;
+    const yawTorus = new THREE.Mesh(
+      new THREE.TorusGeometry(yawRadius, 40, 16, 100, 0, Math.PI * 1.5),
+      new THREE.MeshPhongMaterial({ color: 0xef4444, emissive: 0xdc2626, transparent: true, opacity: 0.7 })
+    );
+    yawTorus.position.set(boxPos.x, boxPos.z, boxPos.y);
+    yawTorus.rotation.y = Math.PI / 2;
+    scene.add(yawTorus);
+
+    // Roll axis point (green sphere - left side)
+    const rollSphere = new THREE.Mesh(
+      new THREE.SphereGeometry(80, 24, 24),
+      new THREE.MeshPhongMaterial({ color: 0x10b981, emissive: 0x059669 })
+    );
+    rollSphere.position.set(boxPos.x - boxDims.sx/2 - 300, boxPos.z, boxPos.y);
+    scene.add(rollSphere);
+
+    // Pitch axis point (red sphere - right side)
+    const pitchSphere = new THREE.Mesh(
+      new THREE.SphereGeometry(80, 24, 24),
+      new THREE.MeshPhongMaterial({ color: 0xef4444, emissive: 0xdc2626 })
+    );
+    pitchSphere.position.set(boxPos.x + boxDims.sx/2 + 300, boxPos.z, boxPos.y);
+    scene.add(pitchSphere);
+
+    // Roll rotation arc (around X axis - green, at left)
+    const rollTorus = new THREE.Mesh(
+      new THREE.TorusGeometry(900, 35, 16, 100, 0, Math.PI * 1.5),
+      new THREE.MeshPhongMaterial({ color: 0x10b981, emissive: 0x059669, transparent: true, opacity: 0.7 })
+    );
+    rollTorus.position.copy(rollSphere.position);
+    rollTorus.rotation.z = Math.PI / 2;
+    scene.add(rollTorus);
+
+    // Pitch rotation arc (around Y axis - red, at right)
+    const pitchTorus = new THREE.Mesh(
+      new THREE.TorusGeometry(900, 35, 16, 100, 0, Math.PI * 1.5),
+      new THREE.MeshPhongMaterial({ color: 0xef4444, emissive: 0xdc2626, transparent: true, opacity: 0.7 })
+    );
+    pitchTorus.position.copy(pitchSphere.position);
+    pitchTorus.rotation.x = Math.PI / 2;
+    scene.add(pitchTorus);
+
+    // Create axis lines for rotation visualization
+    const axisLineLength = 1500;
+    
+    // Roll axis line (green - X axis)
+    const rollAxisGeom = new THREE.BufferGeometry();
+    rollAxisGeom.setAttribute('position', new THREE.BufferAttribute(
+      new Float32Array([
+        rollSphere.position.x - axisLineLength, rollSphere.position.y, rollSphere.position.z,
+        rollSphere.position.x + axisLineLength, rollSphere.position.y, rollSphere.position.z
+      ]),
+      3
+    ));
+    const rollAxisLine = new THREE.Line(rollAxisGeom, new THREE.LineBasicMaterial({ color: 0x10b981, linewidth: 3 }));
+    scene.add(rollAxisLine);
+
+    // Pitch axis line (red - Y axis)
+    const pitchAxisGeom = new THREE.BufferGeometry();
+    pitchAxisGeom.setAttribute('position', new THREE.BufferAttribute(
+      new Float32Array([
+        pitchSphere.position.x, pitchSphere.position.y - axisLineLength, pitchSphere.position.z,
+        pitchSphere.position.x, pitchSphere.position.y + axisLineLength, pitchSphere.position.z
+      ]),
+      3
+    ));
+    const pitchAxisLine = new THREE.Line(pitchAxisGeom, new THREE.LineBasicMaterial({ color: 0xef4444, linewidth: 3 }));
+    scene.add(pitchAxisLine);
+
+    // Create rotation labels
+    function createSmallLabel(text, color = '#fff') {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'transparent';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.font = 'Bold 32px Arial';
+      ctx.fillStyle = color;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+      const texture = new THREE.CanvasTexture(canvas);
+      return texture;
+    }
+
+    // Yaw label (top)
+    const yawLabelGeom = new THREE.PlaneGeometry(300, 100);
+    const yawLabelTex = createSmallLabel(`Yaw: ${boxRot.yaw.toFixed(2)} rad`, '#ef4444');
+    const yawLabel = new THREE.Mesh(yawLabelGeom, new THREE.MeshBasicMaterial({ map: yawLabelTex, transparent: true }));
+    yawLabel.position.set(boxPos.x, boxPos.z + yawRadius + 400, boxPos.y);
+    yawLabel.lookAt(boxPos.x, boxPos.z + 200, boxPos.y);
+    scene.add(yawLabel);
+
+    // Roll label (left)
+    const rollLabelGeom = new THREE.PlaneGeometry(280, 100);
+    const rollLabelTex = createSmallLabel(`Roll: ${boxRot.roll.toFixed(2)} rad`, '#10b981');
+    const rollLabel = new THREE.Mesh(rollLabelGeom, new THREE.MeshBasicMaterial({ map: rollLabelTex, transparent: true }));
+    rollLabel.position.set(rollSphere.position.x - 600, rollSphere.position.y + 600, rollSphere.position.z);
+    rollLabel.lookAt(boxPos.x, boxPos.z, boxPos.y);
+    scene.add(rollLabel);
+
+    // Pitch label (right)
+    const pitchLabelGeom = new THREE.PlaneGeometry(300, 100);
+    const pitchLabelTex = createSmallLabel(`Pitch: ${boxRot.pitch.toFixed(2)} rad`, '#ef4444');
+    const pitchLabel = new THREE.Mesh(pitchLabelGeom, new THREE.MeshBasicMaterial({ map: pitchLabelTex, transparent: true }));
+    pitchLabel.position.set(pitchSphere.position.x + 600, pitchSphere.position.y + 600, pitchSphere.position.z);
+    pitchLabel.lookAt(boxPos.x, boxPos.z, boxPos.y);
+    scene.add(pitchLabel);
+
+    // Camera positioning with orbit
+    const updateCamera = () => {
+      // Use interactive controls if they have been set, otherwise use props
+      const yaw = cameraControlRef.current.yaw;
+      const pitch = cameraControlRef.current.pitch;
+      const distance = cameraControlRef.current.radius;
+      
+      const x = boxPos.x + distance * Math.cos(yaw) * Math.cos(pitch);
+      const y = boxPos.z + distance * Math.sin(pitch);
+      const z = boxPos.y + distance * Math.sin(yaw) * Math.cos(pitch);
+      
+      camera.position.set(x, y, z);
+      camera.lookAt(boxPos.x, boxPos.z, boxPos.y);
+    };
+
+    updateCamera();
+
+    // Animation loop
+    const animate = () => {
+      requestAnimationFrame(animate);
+      
+      // Update box rotation
+      if (boxRef.current) {
+        boxRef.current.rotation.order = 'YXZ';
+        boxRef.current.rotation.y = boxRot.yaw;
+        boxRef.current.rotation.x = boxRot.pitch;
+        boxRef.current.rotation.z = boxRot.roll;
+      }
+
+      updateCamera();
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    // Handle window resize
+    const handleResize = () => {
+      if (containerRef.current) {
+        const width = containerRef.current.clientWidth;
+        const height = containerRef.current.clientHeight;
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
+      }
+    };
+
+    // Mouse controls
+    const handleMouseDown = (e) => {
+      dragStateRef.current.isDragging = true;
+      dragStateRef.current.lastX = e.clientX;
+      dragStateRef.current.lastY = e.clientY;
+      renderer.domElement.style.cursor = 'grabbing';
+    };
+
+    const handleMouseMove = (e) => {
+      if (!dragStateRef.current.isDragging) return;
+      
+      const deltaX = e.clientX - dragStateRef.current.lastX;
+      const deltaY = e.clientY - dragStateRef.current.lastY;
+      
+      dragStateRef.current.lastX = e.clientX;
+      dragStateRef.current.lastY = e.clientY;
+      
+      // Update yaw (horizontal rotation)
+      cameraControlRef.current.yaw += deltaX * 0.01;
+      
+      // Update pitch (vertical rotation) with constraints
+      cameraControlRef.current.pitch += deltaY * 0.01;
+      cameraControlRef.current.pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, cameraControlRef.current.pitch));
+      
+      // Update camera position
+      const distance = cameraControlRef.current.radius;
+      const x = boxPos.x + distance * Math.cos(cameraControlRef.current.yaw) * Math.cos(cameraControlRef.current.pitch);
+      const y = boxPos.z + distance * Math.sin(cameraControlRef.current.pitch);
+      const z = boxPos.y + distance * Math.sin(cameraControlRef.current.yaw) * Math.cos(cameraControlRef.current.pitch);
+      
+      camera.position.set(x, y, z);
+      camera.lookAt(boxPos.x, boxPos.z, boxPos.y);
+    };
+
+    const handleMouseUp = () => {
+      dragStateRef.current.isDragging = false;
+      renderer.domElement.style.cursor = 'grab';
+    };
+
+    const handleWheel = (e) => {
+      e.preventDefault();
+      
+      const zoomSpeed = 50;
+      const direction = e.deltaY > 0 ? 1 : -1;
+      
+      cameraControlRef.current.radius += direction * zoomSpeed;
+      cameraControlRef.current.radius = Math.max(500, Math.min(10000, cameraControlRef.current.radius));
+      
+      // Update camera position
+      const distance = cameraControlRef.current.radius;
+      const x = boxPos.x + distance * Math.cos(cameraControlRef.current.yaw) * Math.cos(cameraControlRef.current.pitch);
+      const y = boxPos.z + distance * Math.sin(cameraControlRef.current.pitch);
+      const z = boxPos.y + distance * Math.sin(cameraControlRef.current.yaw) * Math.cos(cameraControlRef.current.pitch);
+      
+      camera.position.set(x, y, z);
+      camera.lookAt(boxPos.x, boxPos.z, boxPos.y);
+    };
+
+    // Touch controls (mobile)
+    const handleTouchStart = (e) => {
+      if (e.touches.length === 1) {
+        dragStateRef.current.isDragging = true;
+        dragStateRef.current.lastX = e.touches[0].clientX;
+        dragStateRef.current.lastY = e.touches[0].clientY;
+      }
+    };
+
+    const handleTouchMove = (e) => {
+      if (!dragStateRef.current.isDragging || e.touches.length !== 1) return;
+      
+      const deltaX = e.touches[0].clientX - dragStateRef.current.lastX;
+      const deltaY = e.touches[0].clientY - dragStateRef.current.lastY;
+      
+      dragStateRef.current.lastX = e.touches[0].clientX;
+      dragStateRef.current.lastY = e.touches[0].clientY;
+      
+      cameraControlRef.current.yaw += deltaX * 0.01;
+      cameraControlRef.current.pitch += deltaY * 0.01;
+      cameraControlRef.current.pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, cameraControlRef.current.pitch));
+      
+      const distance = cameraControlRef.current.radius;
+      const x = boxPos.x + distance * Math.cos(cameraControlRef.current.yaw) * Math.cos(cameraControlRef.current.pitch);
+      const y = boxPos.z + distance * Math.sin(cameraControlRef.current.pitch);
+      const z = boxPos.y + distance * Math.sin(cameraControlRef.current.yaw) * Math.cos(cameraControlRef.current.pitch);
+      
+      camera.position.set(x, y, z);
+      camera.lookAt(boxPos.x, boxPos.z, boxPos.y);
+    };
+
+    const handleTouchEnd = () => {
+      dragStateRef.current.isDragging = false;
+    };
+
+    window.addEventListener('resize', handleResize);
+    renderer.domElement.addEventListener('mousedown', handleMouseDown);
+    renderer.domElement.addEventListener('mousemove', handleMouseMove);
+    renderer.domElement.addEventListener('mouseup', handleMouseUp);
+    renderer.domElement.addEventListener('mouseleave', handleMouseUp);
+    renderer.domElement.addEventListener('wheel', handleWheel, { passive: false });
+    renderer.domElement.addEventListener('touchstart', handleTouchStart);
+    renderer.domElement.addEventListener('touchmove', handleTouchMove);
+    renderer.domElement.addEventListener('touchend', handleTouchEnd);
+    renderer.domElement.style.cursor = 'grab';
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      renderer.domElement.removeEventListener('mousedown', handleMouseDown);
+      renderer.domElement.removeEventListener('mousemove', handleMouseMove);
+      renderer.domElement.removeEventListener('mouseup', handleMouseUp);
+      renderer.domElement.removeEventListener('mouseleave', handleMouseUp);
+      renderer.domElement.removeEventListener('wheel', handleWheel);
+      renderer.domElement.removeEventListener('touchstart', handleTouchStart);
+      renderer.domElement.removeEventListener('touchmove', handleTouchMove);
+      renderer.domElement.removeEventListener('touchend', handleTouchEnd);
+      containerRef.current?.removeChild(renderer.domElement);
+    };
+  }, [basePos, targetPos, boxPos, boxDims, boxRot, orbit, outAngles]);
+
+  return <div ref={containerRef} style={{width: '100%', height: '100%'}} />;
+}
+
+function Section({ title, children, defaultOpen = true }) {
+  const [open, setOpen] = React.useState(defaultOpen);
+  return (
+    <div style={{
+      ...S.card,
+      overflow: "hidden",
+      transition: "all 0.2s ease",
+    }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          cursor: "pointer",
+          userSelect: "none",
+          padding: "2px 0",
+          marginBottom: open ? "12px" : 0,
+        }}
+        onClick={() => setOpen(!open)}
+      >
+        <div style={{...S.sectionTitle, fontSize:14}}>{title}</div>
+        <div style={{
+          fontSize: 18,
+          color: UI.accent,
+          transition: "transform 0.2s ease",
+          transform: open ? "rotate(180deg)" : "rotate(0deg)",
+        }}>▾</div>
+      </div>
+      {open && (
+        <div style={{animation: "slideDown 0.2s ease"}}>
+          <style>{`@keyframes slideDown { from { opacity: 0; } to { opacity: 1; } }`}</style>
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -506,6 +1240,7 @@ function SplitPane({ left, right, initial=380, min=280, max=640 }){
     return ()=>{ window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   },[min,max]);
 
+
   return (
     <div style={S.splitWrap}>
       <div style={{...S.left, width: lw}}>
@@ -523,6 +1258,9 @@ function SplitPane({ left, right, initial=380, min=280, max=640 }){
   );
 }
 
+
+
+
 // --------- Main component ---------------------------------------------------
 export default function Simulation3D_UXClean(){
   // Angles phys.
@@ -539,10 +1277,14 @@ export default function Simulation3D_UXClean(){
   const [beta, setBeta] = React.useState(0);
   const [V, setV] = React.useState(1000);
 
+
+
+
+
   // Mode positions
   const [ctrl, setCtrl] = React.useState('manuel'); // 'angles' | 'manuel'
 
-  const baseFromAngles = React.useMemo(()=>computeBase(D1Lx,D1Ly,D1Rx,D1Ry,FLRx,FLRy,FLRz,beta), [D1Lx,D1Ly,D1Rx,D1Ry,FLRx,FLRy,FLRz,beta]);
+  const baseFromAngles = React.useMemo(()=>computeBase(D1Lx,D1Ly,D1Rx,D1Ry,FLRx,FLRy,FLRz,beta/60), [D1Lx,D1Ly,D1Rx,D1Ry,FLRx,FLRy,FLRz,beta]);
   const rayAngles = React.useMemo(()=>computeRay(eps, alpha/60, zeta), [eps, alpha, zeta]);
   const targFromAngles = React.useMemo(()=>computeTarget(baseFromAngles, rayAngles, V), [baseFromAngles, rayAngles, V]);
 
@@ -573,6 +1315,7 @@ export default function Simulation3D_UXClean(){
   const [rectW, setRectW]         = React.useState(800);
   const [rectH, setRectH]         = React.useState(300);
 
+
   const rect = React.useMemo(()=>({
     w: rectW, h: rectH,
     yaw: deg2rad(rectYaw), pitch: deg2rad(rectPitch), roll: deg2rad(rectRoll)
@@ -592,11 +1335,33 @@ export default function Simulation3D_UXClean(){
     geom: { sx: boxSX, sy: boxSY, sz: boxSZ, yaw: deg2rad(boxYaw), pitch: deg2rad(boxPitch), roll: deg2rad(boxRoll) }
   }),[boxPos,boxSX,boxSY,boxSZ,boxYaw,boxPitch,boxRoll]);
 
+  // Mode d'affichage
+  const [viewMode, setViewMode] = React.useState('3d'); // '2d' | '3d'
+
   // Vue auto mesurée
   const [viewW, setViewW] = React.useState(1200);
   const [viewH, setViewH] = React.useState(700);
   const [orbit, setOrbit] = React.useState({ yaw:0.6, pitch:0.45, radius:9000 });
   const simRef = React.useRef(null);
+  const svgRef = React.useRef(null);
+  const dragRef = React.useRef({ type: null, lastX: 0, lastY: 0, lastAngle: 0 });
+
+
+
+
+  // Background image options
+  const [bgUrl, setBgUrl] = React.useState("");
+  const [bgOffsetX, setBgOffsetX] = React.useState(0);
+  const [bgOffsetY, setBgOffsetY] = React.useState(0);
+  const [bgScale, setBgScale] = React.useState(1);
+  const [bgOpacity, setBgOpacity] = React.useState(0.3);
+  const [showGrid, setShowGrid] = React.useState(true);
+  
+  // Interaction mode
+  const [draggingCam, setDraggingCam] = React.useState(false);
+  const [draggingTarget, setDraggingTarget] = React.useState(false);
+  const [control, setControl] = React.useState(null);
+  
   React.useEffect(()=>{
     if (!simRef.current || typeof ResizeObserver==="undefined") return;
     const ro = new ResizeObserver(entries=>{
@@ -620,6 +1385,39 @@ export default function Simulation3D_UXClean(){
     setBoxYaw(a=>a+dyaw); setBoxPitch(a=>clamp(a+dpitch,-89,89)); setBoxRoll(a=>a+droll);
   },[]);
 
+  // Pointer handlers (minimal implementations)
+  const onPointerMove = React.useCallback((e) => {
+    if (dragRef.current.type === 'orbit') {
+      setOrbit(o => ({
+        ...o,
+        yaw: o.yaw - (e.movementX * 0.005),
+        pitch: clamp(o.pitch - (e.movementY * 0.005), -1.2, 1.2)
+      }));
+    }
+  }, []);
+
+  const onPointerUp = React.useCallback((e) => {
+    dragRef.current.type = null;
+  }, []);
+
+  const onPointerDownCam = React.useCallback((e) => {
+    setDraggingCam(true);
+    dragRef.current.type = 'camera';
+    e.preventDefault();
+  }, []);
+
+  const onPointerDownTarget = React.useCallback((e) => {
+    setDraggingTarget(true);
+    dragRef.current.type = 'cible';
+    e.preventDefault();
+  }, []);
+
+  const onPointerDownRotate = React.useCallback((e) => {
+    dragRef.current.type = 'rotateTarget';
+    e.preventDefault();
+  }, []);
+
+
   const outputs = { Xt: targ.x, Yt: targ.y, Zt: targ.z };
   const baseForTest = { baseX: base.x, baseY: base.y, baseZ: base.z };
   const targetForTest = { Xt: targ.x, Yt: targ.y, Zt: targ.z };
@@ -627,51 +1425,129 @@ export default function Simulation3D_UXClean(){
   // Angles sortants (toujours calculés à partir des positions visibles)
   const outAngles = React.useMemo(()=>computeOutputAngles(base, targ, alpha/60), [base, targ, alpha]);
 
+  // 2D visualization variables
+  const scale = 2; // px per unit
+  const Rarc = 120;
+  const RarcInner = 100;
+  const Rbeta = 80;
+  const RbetaInner = 60;
+  
+  // Screen positions
+  const camScreenX = viewW / 2;
+  const camScreenY = viewH / 2;
+  const sx = viewW / 2 + (targ.x - base.x) * scale;
+  const sy = viewH / 2 - (targ.y - base.y) * scale;
+  
+  // Other display variables
+  const epsDisp = eps;
+  const rectAngle = 0;
+  const targetPxW = 300;
+  const targetPxH = 100;
+  const D1Cx = (D1Lx + D1Rx) / 2;
+  const D1Cy = (D1Ly + D1Ry) / 2;
+  
+  // Helper functions for SVG
+  const polarPointScreen = (cx, cy, r, angleDeg) => {
+    const rad = deg2rad(angleDeg);
+    return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+  };
+  
+  const sectorPath = (cx, cy, r1, r2, startDeg, endDeg) => {
+    const start = deg2rad(startDeg);
+    const end = deg2rad(endDeg);
+    const x1 = cx + r1 * Math.cos(start);
+    const y1 = cy + r1 * Math.sin(start);
+    const x2 = cx + r2 * Math.cos(start);
+    const y2 = cy + r2 * Math.sin(start);
+    const x3 = cx + r2 * Math.cos(end);
+    const y3 = cy + r2 * Math.sin(end);
+    const x4 = cx + r1 * Math.cos(end);
+    const y4 = cy + r1 * Math.sin(end);
+    const largeArc = (end - start) > Math.PI ? 1 : 0;
+    return `M ${x1} ${y1} L ${x2} ${y2} A ${r2} ${r2} 0 ${largeArc} 1 ${x3} ${y3} L ${x4} ${y4} A ${r1} ${r1} 0 ${largeArc} 0 ${x1} ${y1} Z`;
+  };
+  
+  // Mock 3D visualization
+  const pBase = { visible: true, x: camScreenX, y: camScreenY, scale: 1 };
+  const pBox = { visible: false, x: 0, y: 0, scale: 1 };
+  const pTarg = { visible: true, x: sx, y: sy, scale: 1 };
+  const boxBounds = { minx: -1000, maxx: 1000, miny: -1000, maxy: 1000 };
+
   
 
 
 
   // --- UI LEFT: panneau
   const LeftPanel = (
-    <div style={S.pad}>
-      <div style={{marginBottom:12}}>
-        <div style={{fontSize:20, fontWeight:700, marginBottom:2}}>Settings</div>
-        <div style={{fontSize:12, color:UI.subtext}}></div>
-        <div style={S.card}>
-  <div style={{fontWeight:600, fontSize:12, marginBottom:8}}>Yt — comparaison</div>
-  <div style={{display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, fontSize:12}}>
-    <div>Yt (formule) = <span style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"}}>{Yt_formula.toFixed(3)}</span></div>
-    <div>Yt (simulation) = <span style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"}}>{Yt_sim.toFixed(3)}</span></div>
-    <div>ΔYt = <span style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", color: Math.abs(dYt)<1e-6 ? "#065f46" : "#991b1b"}}>{dYt.toFixed(6)}</span></div>
-  </div>
-  <div style={{fontSize:11, color:UI.subtext, marginTop:6}}>
-    {ctrl==='manuel'
-      ? "Note : en mode Manuel, un écart est normal si la cible n'est pas pilotée par les angles."
-      : "En mode Angles, ΔYt devrait être ~0."}
-  </div>
-</div>
-
+    <div style={{...S.pad, paddingTop:"20px"}}>
+      <div style={{marginBottom:24}}>
+        <div style={{
+          fontSize:24,
+          fontWeight:800,
+          marginBottom:6,
+          color: UI.textPrimary,
+          letterSpacing:"-0.5px",
+        }}>
+          ⚙️ Simulation
+        </div>
+        <div style={{
+          fontSize:13,
+          color:UI.textSecondary,
+          fontWeight:500,
+        }}>
+          Paramétrage et visualisation RADAR
+        </div>
+      </div>
+      
+      <div style={{
+        ...S.card,
+        background: `linear-gradient(135deg, ${UI.accentLight} 0%, rgba(79,70,229,0.05) 100%)`,
+        borderColor: UI.accent,
+        marginBottom:16,
+      }}>
+        <div style={{fontWeight:600, fontSize:13, marginBottom:10, color: UI.accent}}>📊 Yt — Comparaison</div>
+        <div style={{display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, fontSize:12}}>
+          <div>
+            <div style={{color:UI.textSecondary, fontSize:11, fontWeight:600, marginBottom:4, textTransform:"uppercase"}}>Formule</div>
+            <div style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize:14, fontWeight:700, color:UI.textPrimary}}>{Yt_formula.toFixed(3)}</div>
+          </div>
+          <div>
+            <div style={{color:UI.textSecondary, fontSize:11, fontWeight:600, marginBottom:4, textTransform:"uppercase"}}>Simulation</div>
+            <div style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize:14, fontWeight:700, color:UI.textPrimary}}>{Yt_sim.toFixed(3)}</div>
+          </div>
+          <div>
+            <div style={{color:UI.textSecondary, fontSize:11, fontWeight:600, marginBottom:4, textTransform:"uppercase"}}>Écart (ΔYt)</div>
+            <div style={{
+              fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+              fontSize:14,
+              fontWeight:700,
+              color: Math.abs(dYt)<1e-6 ? "#059669" : "#dc2626"
+            }}>
+              {Math.abs(dYt)<1e-6 ? "✓" : "✗"} {dYt.toFixed(6)}
+            </div>
+          </div>
+        </div>
+        <div style={{fontSize:11, color:UI.textSecondary, marginTop:10, fontStyle:"italic"}}>
+          {ctrl==='manuel'
+            ? "📝 Mode Manuel : écart normal si la cible n'est pas pilotée par les angles."
+            : "✅ Mode Angles : ΔYt devrait être ≈ 0."}
+        </div>
       </div>
 
       <div style={S.card}>
-        <div style={S.hGroup}>
-          <span style={S.badge}>Positions :</span>
+        <div style={{...S.hGroup, marginBottom:14}}>
+          <span style={{...S.badge, marginRight:0}}>📍 Positions</span>
           <SegButton active={ctrl==='angles'} onClick={()=>setCtrl('angles')}>Angles</SegButton>
           <SegButton active={ctrl==='manuel'} onClick={()=>setCtrl('manuel')}>Manuel</SegButton>
         </div>
         <div style={S.hGroup}>
-          <span style={S.badge}>Interaction :</span>
-          <SegButton active={interaction==='free'} onClick={()=>setInteraction('free')}>Libre (Tout)</SegButton>
-          <SegButton active={interaction==='orbit'} onClick={()=>setInteraction('orbit')}>Orbite</SegButton>
-          <SegButton active={interaction==='moveBase'} onClick={()=>setInteraction('moveBase')}>Caméra</SegButton>
-          <SegButton active={interaction==='moveTarget'} onClick={()=>setInteraction('moveTarget')}>Cible</SegButton>
-          <SegButton active={interaction==='rotateTarget'} onClick={()=>setInteraction('rotateTarget')}>Rot. Cible</SegButton>
-          <SegButton active={interaction==='moveBox'} onClick={()=>setInteraction('moveBox')}>Boîte</SegButton>
-          <SegButton active={interaction==='rotateBox'} onClick={()=>setInteraction('rotateBox')}>Rot. Boîte</SegButton>
+          <span style={{...S.badge, marginRight:0}}>�️ Vue</span>
+          <SegButton active={viewMode==='3d'} onClick={()=>setViewMode('3d')}>Vue 3D</SegButton>
+          <SegButton active={viewMode==='2d'} onClick={()=>setViewMode('2d')}>Vue 2D</SegButton>
         </div>
       </div>
 
-      <Section title="Paramètres – Mode Angles" defaultOpen>
+      <Section title="📐 Paramètres – Mode Angles" defaultOpen>
         <div style={S.grid2}>
           <SliderRow label="FLRx" value={FLRx} onChange={setFLRx} min={-10000} max={10000} step={0.001} />
           <SliderRow label="FLRy" value={FLRy} onChange={setFLRy} min={-10000} max={10000} step={0.001} />
@@ -683,14 +1559,14 @@ export default function Simulation3D_UXClean(){
           <SliderRow label="D1Ry" value={D1Ry} onChange={setD1Ry} min={-10000} max={10000} step={0.001} />
 
           <SliderRow label="β (sym) [°]" value={beta} onChange={setBeta} min={-180} max={180} step={0.01} />
-          <SliderRow label="α drive [′] (minutes)" value={alpha} onChange={setAlpha} min={-10800} max={10800} step={0.01} />
+          <SliderRow label="α drive [′]" value={alpha} onChange={setAlpha} min={-10800} max={10800} step={0.01} />
           <SliderRow label="ε (zr) [°]" value={eps} onChange={setEps} min={-180} max={180} step={0.01} />
           <SliderRow label="θ (polaire) [°]" value={zeta} onChange={setZeta} min={0} max={180} step={0.01} />
-          <SliderRow label="V" value={V} onChange={setV} min={0} max={20000} step={0.001} />
+          <SliderRow label="V [mm]" value={V} onChange={setV} min={0} max={20000} step={0.001} />
         </div>
       </Section>
 
-      <Section title="Positions – Mode Manuel" defaultOpen={false}>
+      <Section title="📍 Positions – Mode Manuel" defaultOpen={false}>
         <div style={S.grid2}>
           <SliderRow label="Base X" value={baseM.x} onChange={(v)=>{ setCtrl('manuel'); setBaseM({...baseM,x:v}); }} min={-20000} max={20000} step={0.01} />
           <SliderRow label="Base Y" value={baseM.y} onChange={(v)=>{ setCtrl('manuel'); setBaseM({...baseM,y:v}); }} min={-20000} max={20000} step={0.01} />
@@ -702,158 +1578,322 @@ export default function Simulation3D_UXClean(){
         </div>
       </Section>
 
+      <Section title="🎲 Contrôles 3D – Pavé Droit" defaultOpen={true}>
+        <div style={S.grid2}>
+          <SliderRow label="Pos X" value={boxPos.x} onChange={(v)=>{ setBoxPos({...boxPos,x:v}); }} min={-5000} max={10000} step={0.1} />
+          <SliderRow label="Pos Y" value={boxPos.y} onChange={(v)=>{ setBoxPos({...boxPos,y:v}); }} min={-5000} max={10000} step={0.1} />
+          <SliderRow label="Pos Z" value={boxPos.z} onChange={(v)=>{ setBoxPos({...boxPos,z:v}); }} min={-5000} max={10000} step={0.1} />
+          
+          <SliderRow label="Dim X" value={boxSX} onChange={setBoxSX} min={100} max={3000} step={1} />
+          <SliderRow label="Dim Y" value={boxSY} onChange={setBoxSY} min={100} max={3000} step={1} />
+          <SliderRow label="Dim Z" value={boxSZ} onChange={setBoxSZ} min={100} max={3000} step={1} />
+          
+          <SliderRow label="Yaw [°]" value={boxYaw} onChange={setBoxYaw} min={-180} max={180} step={1} />
+          <SliderRow label="Pitch [°]" value={boxPitch} onChange={setBoxPitch} min={-180} max={180} step={1} />
+          <SliderRow label="Roll [°]" value={boxRoll} onChange={setBoxRoll} min={-180} max={180} step={1} />
+        </div>
+        
+        <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginTop:12}}>
+          <button style={{...S.resetBtn, backgroundColor:"#06b6d4"}} onClick={()=>{
+            setBoxPos({x:1000, y:0, z:400});
+            setBoxSX(900); setBoxSY(600); setBoxSZ(500);
+            setBoxYaw(0); setBoxPitch(0); setBoxRoll(0);
+          }}>
+            🔄 Réinitialiser Boîte
+          </button>
+          <button style={{...S.resetBtn, backgroundColor:"#8b5cf6"}} onClick={()=>{
+            setOrbit({yaw:0.6, pitch:0.45, radius:3000});
+          }}>
+            📷 Caméra par défaut
+          </button>
+        </div>
+      </Section>
+
+      <Section title="📹 Caméra Orbitale" defaultOpen={false}>
+        <div style={S.grid2}>
+          <SliderRow label="Yaw [rad]" value={orbit.yaw} onChange={(v)=>setOrbit({...orbit,yaw:v})} min={-Math.PI*2} max={Math.PI*2} step={0.01} />
+          <SliderRow label="Pitch [rad]" value={orbit.pitch} onChange={(v)=>setOrbit({...orbit,pitch:clamp(v,-Math.PI/2,Math.PI/2)})} min={-Math.PI/2} max={Math.PI/2} step={0.01} />
+          <SliderRow label="Rayon [mm]" value={orbit.radius} onChange={(v)=>setOrbit({...orbit,radius:Math.max(500,v)})} min={500} max={10000} step={100} />
+        </div>
+      </Section>
+
       <SelfTests base={baseForTest} target={targetForTest} V={V} useAngles={ctrl==='angles'} ray={rayAngles} />
 
-      <div style={S.card}>
-        <div style={{fontWeight:600, fontSize:12, marginBottom:8, color:"#92400e"}}>Sorties (monde)</div>
-        <div style={{display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, fontSize:12}}>
-          <div>Xt = <span style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"}}>{outputs.Xt.toFixed(3)}</span></div>
-          <div>Yt = <span style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"}}>{outputs.Yt.toFixed(3)}</span></div>
-          <div>Zt = <span style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"}}>{outputs.Zt.toFixed(3)}</span></div>
-        </div>
-      </div>
-
-      <div style={S.card}>
-        <div style={{fontWeight:600, fontSize:12, marginBottom:8, color:"#1f2937"}}>Angles (sortie)</div>
-        <div style={{display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:8, fontSize:12}}>
-          <div>η (azimut) = <span style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"}}>{outAngles.etaDeg.toFixed(2)}°</span></div>
-          <div>θ (polaire) = <span style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"}}>{outAngles.thetaDeg.toFixed(2)}°</span></div>
-          <div>Élév. = <span style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"}}>{outAngles.elevDeg.toFixed(2)}°</span></div>
-          <div>α (drive) = <span style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"}}>{alpha.toFixed(2)}′</span> <span style={{color:UI.subtext}}>({(alpha/60).toFixed(4)}°)</span></div>
-          <div>ε (calc) = <span style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"}}>{outAngles.epsDeg.toFixed(2)}°</span></div>
-        </div>
-        <div style={{fontSize:11, color:UI.subtext, marginTop:6}}>V (mesuré) = {outAngles.V.toFixed(3)}</div>
-      </div>
-
-      <div style={{display:"flex", gap:10}}>
-        <button
-          style={S.resetBtn}
-          onClick={()=>{
-            setFLRx(5638); setFLRy(0); setFLRz(0);
-            setD1Lx(-4300); setD1Ly(1245); setD1Rx(-4300); setD1Ry(-1255);
-            setBeta(0); setAlpha(0); setEps(0); setZeta(90); setV(1000);
-            const b=computeBase(-4300,1245,-4300,-1255,5638,0,0,0);
-            const r=computeRay(0,0,90);
-            const t=computeTarget(b,r,1000);
-            setBaseM({ x:b.baseX, y:b.baseY, z:b.baseZ });
-            setTargM({ x:t.Xt, y:t.Yt, z:t.Zt });
-            setCtrl('manuel');
-            setRectYaw(0); setRectPitch(0); setRectRoll(0); setRectW(800); setRectH(300);
-            setBoxPos({ x: 1000, y: 0, z: 400 });
-            setBoxYaw(15); setBoxPitch(-5); setBoxRoll(10);
-            setBoxSX(900); setBoxSY(600); setBoxSZ(500);
-            setOrbit({ yaw:0.6, pitch:0.45, radius:9000 });
-            setInteraction('free');
-          }}
-        >Réinitialiser</button>
-      </div>
-    </div>
-
-          {/* Zone de visualisation (immense) */}
-          <div className="bg-white rounded-2xl shadow overflow-hidden flex-1">
-            <div
-              className="relative bg-white"
-              style={{ width: viewW + 'px', height: viewH + 'px' }}
-            >
-              <svg ref={svgRef} width={viewW} height={viewH} className="absolute inset-0"
-                   onPointerMove={onPointerMove}
-                   onPointerUp={onPointerUp}
-                   onPointerCancel={onPointerUp}
-                   onPointerLeave={onPointerUp}
-              >
-                {/* Image de fond (optionnelle) */}
-                {bgUrl && (
-                  <g transform={`translate(${bgOffsetX},${bgOffsetY}) scale(${bgScale})`} opacity={bgOpacity}>
-                    <image href={bgUrl} x={0} y={0} width={viewW} height={viewH} preserveAspectRatio="xMidYMid meet" />
-                  </g>
-                )}
-
-                {/* Quadrillage */}
-                {showGrid && (
-                  <>
-                    <defs>
-                      <pattern id="grid" width={50} height={50} patternUnits="userSpaceOnUse">
-                        <path d="M 50 0 L 0 0 0 50" fill="none" stroke="rgba(0,0,0,0.08)" strokeWidth="1"/>
-                      </pattern>
-                    </defs>
-                    <rect width="100%" height="100%" fill="url(#grid)" />
-                  </>
-                )}
-
-                {/* Axes */}
-                <line x1={viewW/2} y1="0" x2={viewW/2} y2={viewH} stroke="rgba(30,30,30,0.35)" strokeWidth="1.5"/>
-                <line x1="0" y1={viewH/2} x2={viewW} y2={viewH/2} stroke="rgba(30,30,30,0.35)" strokeWidth="1.5"/>
-
-                {/* Légende (sans valeurs) */}
-                <g transform={`translate(${12}, ${12})`} pointerEvents="none">
-                  <rect x="0" y="0" width={220} height={64} rx={10} fill="rgba(255,255,255,0.9)" />
-                  <g transform="translate(10,16)"><rect width="12" height="12" rx="2" fill="#6366f1" /><text x="18" y="11" fontSize="12" fill="#111827">α (drive)</text></g>
-                  <g transform="translate(10,36)"><rect width="12" height="12" rx="2" fill="#0284c7" /><text x="18" y="11" fontSize="12" fill="#111827">ε (zr)</text></g>
-                  <g transform="translate(110,16)"><rect width="12" height="12" rx="2" fill="rgba(245,158,11,0.75)" /><text x="18" y="11" fontSize="12" fill="#111827">η = ε−α</text></g>
-                  <g transform="translate(110,36)"><rect width="12" height="12" rx="2" fill="rgba(51,65,85,0.6)" /><text x="18" y="11" fontSize="12" fill="#111827">β (sym)</text></g>
-                </g>
-
-                {/* Base SLR.FL / Caméra */}
-                {(() => {
-                  const cx = camScreenX, cy = camScreenY;
-                  const pAlpha = polarPointScreen(cx, cy, Rarc+14, alpha);
-                  const pEps   = polarPointScreen(cx, cy, Rarc+14, epsDisp);
-                  return (
-                    <g>
-                      {/* secteur η rempli */}
-                      <path d={sectorPath(cx, cy, RarcInner, Rarc, alpha, epsDisp)} fill="rgba(245,158,11,0.35)" stroke="rgba(245,158,11,0.9)" strokeWidth={2} />
-                      {/* rayon α */}
-                      <line x1={cx} y1={cy} x2={pAlpha.x} y2={pAlpha.y} stroke="#6366f1" strokeWidth={3} />
-                      {/* rayon ε */}
-                      <line x1={cx} y1={cy} x2={pEps.x} y2={pEps.y} stroke="#0284c7" strokeWidth={3} />
-                      {/* point caméra */}
-                      <circle cx={cx} cy={cy} r={7} fill="rgba(16,185,129,0.95)"
-                              style={{ cursor: control==="camera" ? (draggingCam?"grabbing":"grab") : "default" }}
-                              onPointerDown={onPointerDownCam}
-                      />
-                    </g>
-                  );
-                })()}
-
-                {/* Vecteur base→cible */}
-                <line x1={camScreenX} y1={camScreenY} x2={sx} y2={sy} stroke="rgba(2,132,199,0.7)" strokeWidth="2" />
-
-                {/* Arc β autour de D1c */}
-                {(() => {
-                  const d1cX = viewW/2 + D1Cx*scale;
-                  const d1cY = viewH/2 - D1Cy*scale;
-                  const pB = polarPointScreen(d1cX, d1cY, Rbeta+8, beta);
-                  return (
-                    <g>
-                      <line x1={d1cX} y1={d1cY} x2={d1cX + Rbeta + 14} y2={d1cY} stroke="rgba(30,41,59,0.6)" strokeWidth={1.5} />
-                      <path d={sectorPath(d1cX, d1cY, RbetaInner, Rbeta, 0, beta)} fill="rgba(51,65,85,0.25)" stroke="rgba(51,65,85,0.9)" strokeWidth={2} />
-                      <line x1={d1cX} y1={d1cY} x2={pB.x} y2={pB.y} stroke="rgba(30,41,59,0.9)" strokeWidth={2} />
-                    </g>
-                  );
-                })()}
-
-                {/* Cible */}
-                <g transform={`translate(${sx},${sy}) rotate(${rectAngle})`}>
-                  <rect x={-targetPxW/2} y={-targetPxH/2} width={targetPxW} height={targetPxH}
-                        fill="#facc15" stroke="none"
-                        onPointerDown={onPointerDownTarget}
-                        style={{ cursor: (control==="cible"||control==="camera") ? (draggingTarget?"grabbing":"grab") : "default" }}
-                  />
-                  <line x1={0} y1={-targetPxH/2} x2={0} y2={-(targetPxH/2+18)} stroke="rgba(0,0,0,0.5)" strokeWidth="2" />
-                  <circle cx={0} cy={-(targetPxH/2+26)} r={6} fill="white" stroke="rgba(0,0,0,0.7)" strokeWidth="2"
-                          onPointerDown={onPointerDownRotate}
-                          style={{ cursor: "grab" }}
-                  />
-                </g>
-              </svg>
-            </div>
-            <div className="p-3 text-[11px] text-slate-600 flex flex-col sm:flex-row sm:justify-between gap-2">
-              <div>Plan : XY (Y vers le haut) – Z base via « FLRz ».</div>
-              <div>Échelle : <span className="tabular-nums">{scale}</span> px/unité</div>
-            </div>
+      <>
+        <div style={{
+          ...S.card,
+          background: "linear-gradient(135deg, rgba(251,146,60,0.05) 0%, rgba(249,115,22,0.05) 100%)",
+          borderColor: "rgba(249,115,22,0.3)",
+        }}>
+          <div style={{fontWeight:600, fontSize:13, marginBottom:12, color: UI.textPrimary}}>📤 Sorties (Monde)</div>
+        <div style={{display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, fontSize:12}}>
+          <div>
+            <div style={{color:UI.textSecondary, fontSize:11, fontWeight:600, marginBottom:4, textTransform:"uppercase"}}>X</div>
+            <div style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize:14, fontWeight:700, color:UI.textPrimary}}>{outputs.Xt.toFixed(1)}</div>
+          </div>
+          <div>
+            <div style={{color:UI.textSecondary, fontSize:11, fontWeight:600, marginBottom:4, textTransform:"uppercase"}}>Y</div>
+            <div style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize:14, fontWeight:700, color:UI.textPrimary}}>{outputs.Yt.toFixed(1)}</div>
+          </div>
+          <div>
+            <div style={{color:UI.textSecondary, fontSize:11, fontWeight:600, marginBottom:4, textTransform:"uppercase"}}>Z</div>
+            <div style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize:14, fontWeight:700, color:UI.textPrimary}}>{outputs.Zt.toFixed(1)}</div>
           </div>
         </div>
       </div>
+
+      <div style={{
+        ...S.card,
+        background: "linear-gradient(135deg, rgba(59,130,246,0.05) 0%, rgba(99,102,241,0.05) 100%)",
+        borderColor: "rgba(99,102,241,0.3)",
+      }}>
+        <div style={{fontWeight:600, fontSize:13, marginBottom:12, color: UI.textPrimary}}>📊 Angles (Sortie)</div>
+        <div style={{display:"grid", gridTemplateColumns:"1fr", gap:10, fontSize:12}}>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", paddingBottom:10, borderBottom:`1px solid ${UI.borderLight}`}}>
+            <span style={{color:UI.textSecondary}}>η (azimut)</span>
+            <span style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontWeight:700, color:UI.textPrimary}}>{outAngles.etaDeg.toFixed(2)}°</span>
+          </div>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", paddingBottom:10, borderBottom:`1px solid ${UI.borderLight}`}}>
+            <span style={{color:UI.textSecondary}}>θ (polaire)</span>
+            <span style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontWeight:700, color:UI.textPrimary}}>{outAngles.thetaDeg.toFixed(2)}°</span>
+          </div>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", paddingBottom:10, borderBottom:`1px solid ${UI.borderLight}`}}>
+            <span style={{color:UI.textSecondary}}>Élévation</span>
+            <span style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontWeight:700, color:UI.textPrimary}}>{outAngles.elevDeg.toFixed(2)}°</span>
+          </div>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", paddingBottom:10, borderBottom:`1px solid ${UI.borderLight}`}}>
+            <span style={{color:UI.textSecondary}}>α (drive)</span>
+            <span style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontWeight:700, color:UI.accent}}>{alpha.toFixed(2)}′ <span style={{fontSize:11, color:UI.textSecondary}}>({(alpha/60).toFixed(4)}°)</span></span>
+          </div>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+            <span style={{color:UI.textSecondary}}>ε (calc)</span>
+            <span style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontWeight:700, color:UI.textPrimary}}>{outAngles.epsDeg.toFixed(2)}°</span>
+          </div>
+        </div>
+        <div style={{fontSize:11, color:UI.textSecondary, marginTop:12, paddingTop:12, borderTop:`1px solid ${UI.borderLight}`, fontStyle:"italic"}}>
+          🔍 V (mesuré) = {outAngles.V.toFixed(3)} mm
+        </div>
+      </div>
+
+      <div style={{...S.card, background: "linear-gradient(135deg, rgba(34,197,94,0.05) 0%, rgba(22,163,74,0.05) 100%)"}}>
+        <div style={{display:"flex", alignItems:"center", justifyContent:"space-between"}}>
+          <button
+            style={{
+              ...S.resetBtn,
+              flex:1,
+              marginRight:"8px",
+              backgroundColor: UI.accent,
+            }}
+            onClick={()=>{
+              setFLRx(5638); setFLRy(0); setFLRz(0);
+              setD1Lx(-4300); setD1Ly(1245); setD1Rx(-4300); setD1Ry(-1255);
+              setBeta(0); setAlpha(0); setEps(0); setZeta(90); setV(1000);
+            }}
+          >🔄 Réinitialiser</button>
+        </div>
+      </div>
+      </>
     </div>
+  );
+
+  return (
+    <SplitPane
+      left={LeftPanel}
+      right={() => (
+        <>
+          {viewMode === '3d' ? (
+            <div style={{
+              width:"100%",
+              height:"100%",
+              backgroundColor:UI.bgLight,
+              display:"flex",
+              flexDirection:"column",
+              position:"relative",
+            }}>
+              <Canvas3D
+                basePos={base}
+                targetPos={targ}
+                boxPos={boxPos}
+                boxDims={{sx: boxSX, sy: boxSY, sz: boxSZ}}
+                boxRot={{yaw: deg2rad(boxYaw), pitch: deg2rad(boxPitch), roll: deg2rad(boxRoll)}}
+                orbit={orbit}
+                outAngles={outAngles}
+              />
+              <div style={{
+                padding:"12px 16px",
+                backgroundColor:UI.bgWhite,
+                borderTop:`1px solid ${UI.border}`,
+                fontSize:"12px",
+                color:UI.textSecondary,
+                display:"flex",
+                justifyContent:"space-between",
+                alignItems:"center",
+                flexWrap:"wrap",
+                gap:"12px",
+              }}>
+                <div style={{display:"flex", gap:"16px"}}>
+                  <span>📐 Boîte : {boxSX.toFixed(0)}×{boxSY.toFixed(0)}×{boxSZ.toFixed(0)}</span>
+                  <span>🎯 Base → Cible : {outAngles.V.toFixed(1)} mm</span>
+                </div>
+                <div style={{color:UI.accent, fontWeight:600}}>
+                  ⚙️ Contrôlez avec la souris et les sliders
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={{
+              width:"100%",
+              height:"100%",
+              backgroundColor:UI.bgLight,
+              display:"flex",
+              flexDirection:"column",
+              position:"relative",
+            }}>
+              <svg style={{flex:1, width:"100%", height:"100%", background:"#fff"}} viewBox={`0 0 ${viewW} ${viewH}`} preserveAspectRatio="xMidYMid meet">
+                {/* Grille légère */}
+                {Array.from({length:Math.ceil(viewW/100)}).map((_, i) => (
+                  <line key={`vgrid${i}`} x1={i*100} y1={0} x2={i*100} y2={viewH} stroke="#f3f4f6" strokeWidth={1} />
+                ))}
+                {Array.from({length:Math.ceil(viewH/100)}).map((_, i) => (
+                  <line key={`hgrid${i}`} x1={0} y1={i*100} x2={viewW} y2={i*100} stroke="#f3f4f6" strokeWidth={1} />
+                ))}
+                
+                {/* Axes principaux */}
+                <line x1={0} y1={viewH/2} x2={viewW} y2={viewH/2} stroke="#e5e7eb" strokeWidth={2} />
+                <line x1={viewW/2} y1={0} x2={viewW/2} y2={viewH} stroke="#e5e7eb" strokeWidth={2} />
+                
+                {/* Étiquettes axes */}
+                <text x={viewW - 40} y={viewH/2 - 10} fontSize={12} fill="#9ca3af" fontWeight={600}>+X</text>
+                <text x={viewW/2 + 10} y={30} fontSize={12} fill="#9ca3af" fontWeight={600}>+Y</text>
+                
+                {/* Point de base (vert) */}
+                {(() => {
+                  const baseX = base.x * 0.15 + viewW/2;
+                  const baseY = viewH/2 - base.y * 0.15;
+                  return (
+                    <g key="base-group">
+                      <circle cx={baseX} cy={baseY} r={12} fill="#10b981" />
+                      <circle cx={baseX} cy={baseY} r={12} fill="none" stroke="#059669" strokeWidth={2} opacity={0.5} />
+                      <text x={baseX + 20} y={baseY - 5} fontSize={11} fill="#10b981" fontWeight={600}>Base</text>
+                      <text x={baseX + 20} y={baseY + 10} fontSize={9} fill="#6b7280">({base.x.toFixed(0)}, {base.y.toFixed(0)})</text>
+                    </g>
+                  );
+                })()}
+                
+                {/* Point cible (rouge) */}
+                {(() => {
+                  const targX = targ.x * 0.15 + viewW/2;
+                  const targY = viewH/2 - targ.y * 0.15;
+                  return (
+                    <g key="target-group">
+                      <circle cx={targX} cy={targY} r={10} fill="#ef4444" />
+                      <circle cx={targX} cy={targY} r={10} fill="none" stroke="#dc2626" strokeWidth={2} opacity={0.5} />
+                      <text x={targX + 20} y={targY - 5} fontSize={11} fill="#ef4444" fontWeight={600}>Cible</text>
+                      <text x={targX + 20} y={targY + 10} fontSize={9} fill="#6b7280">({targ.x.toFixed(0)}, {targ.y.toFixed(0)})</text>
+                    </g>
+                  );
+                })()}
+                
+                {/* Ligne base-cible */}
+                {(() => {
+                  const baseX = base.x * 0.15 + viewW/2;
+                  const baseY = viewH/2 - base.y * 0.15;
+                  const targX = targ.x * 0.15 + viewW/2;
+                  const targY = viewH/2 - targ.y * 0.15;
+                  return (
+                    <line key="connection" x1={baseX} y1={baseY} x2={targX} y2={targY} 
+                          stroke="#0284c7" strokeWidth={2.5} strokeDasharray="8,4" opacity={0.8} />
+                  );
+                })()}
+                
+                {/* Arc pour l'angle η (azimut) */}
+                {(() => {
+                  const baseX = base.x * 0.15 + viewW/2;
+                  const baseY = viewH/2 - base.y * 0.15;
+                  const radius = 80;
+                  const startAngle = 0;
+                  const endAngle = outAngles.etaDeg * Math.PI / 180;
+                  const x1 = baseX + radius * Math.cos(startAngle);
+                  const y1 = baseY - radius * Math.sin(startAngle);
+                  const x2 = baseX + radius * Math.cos(endAngle);
+                  const y2 = baseY - radius * Math.sin(endAngle);
+                  const largeArc = Math.abs(endAngle - startAngle) > Math.PI ? 1 : 0;
+                  const pathData = `M ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2}`;
+                  
+                  // Label pour l'angle
+                  const labelAngle = endAngle / 2;
+                  const labelRadius = radius + 30;
+                  const labelX = baseX + labelRadius * Math.cos(labelAngle);
+                  const labelY = baseY - labelRadius * Math.sin(labelAngle);
+                  
+                  return (
+                    <g key="eta-arc">
+                      <path d={pathData} stroke="#f59e0b" strokeWidth={3.5} fill="none" opacity={0.9} />
+                      <text x={labelX} y={labelY} fontSize={12} fill="#f59e0b" fontWeight={700} textAnchor="middle">
+                        η {outAngles.etaDeg.toFixed(1)}°
+                      </text>
+                    </g>
+                  );
+                })()}
+                
+                {/* Boîte cible (rectangle jaune) proportionnel à boxSX/boxSY */}
+                {(() => {
+                  const targX = targ.x * 0.15 + viewW/2;
+                  const targY = viewH/2 - targ.y * 0.15;
+                  const w = Math.max(30, boxSX * 0.05); // Échelle adaptée
+                  const h = Math.max(20, boxSY * 0.05);
+                  return (
+                    <g key="box">
+                      <rect x={targX - w/2} y={targY - h/2} width={w} height={h} 
+                            fill="#fbbf24" fillOpacity={0.85} stroke="#d97706" strokeWidth={2.5} />
+                      <text x={targX} y={targY + 3} fontSize={10} fill="#78350f" fontWeight={600} textAnchor="middle">
+                        {boxSX.toFixed(0)}×{boxSY.toFixed(0)}
+                      </text>
+                    </g>
+                  );
+                })()}
+                
+                {/* Légende */}
+                <g transform={`translate(20, 20)`}>
+                  <text fontSize={14} fontWeight={700} fill={UI.textPrimary}>Légende</text>
+                  
+                  <rect x={0} y={22} width={14} height={14} fill="#4f46e5" />
+                  <text x={22} y={32} fontSize={11} fill={UI.textPrimary}>α (drive)</text>
+                  
+                  <rect x={140} y={22} width={14} height={14} fill="#0284c7" />
+                  <text x={162} y={32} fontSize={11} fill={UI.textPrimary}>ε (zr)</text>
+                  
+                  <rect x={0} y={48} width={14} height={14} fill="#f59e0b" />
+                  <text x={22} y={58} fontSize={11} fill={UI.textPrimary}>η = ε−α</text>
+                  
+                  <rect x={140} y={48} width={14} height={14} fill="#6b7280" />
+                  <text x={162} y={58} fontSize={11} fill={UI.textPrimary}>β (sym)</text>
+                </g>
+                
+                {/* Infos détails */}
+                <g transform={`translate(20, ${viewH - 110})`}>
+                  <text fontSize={13} fontWeight={700} fill={UI.textPrimary} x={0} y={0}>📊 Angles sortants</text>
+                  <text fontSize={11} fill={UI.textSecondary} x={0} y={26}>η (azimut): <tspan fill={UI.accent} fontWeight={600}>{outAngles.etaDeg.toFixed(2)}°</tspan></text>
+                  <text fontSize={11} fill={UI.textSecondary} x={0} y={48}>θ (polaire): <tspan fill={UI.accent} fontWeight={600}>{outAngles.thetaDeg.toFixed(2)}°</tspan></text>
+                  <text fontSize={11} fill={UI.textSecondary} x={0} y={70}>Élévation: <tspan fill={UI.accent} fontWeight={600}>{outAngles.elevDeg.toFixed(2)}°</tspan></text>
+                  <text fontSize={11} fill={UI.accent} fontWeight={700} x={0} y={92}>📏 Distance: {outAngles.V.toFixed(1)} mm</text>
+                </g>
+              </svg>
+              <div style={{
+                padding:"12px 16px",
+                backgroundColor:UI.bgWhite,
+                borderTop:`1px solid ${UI.border}`,
+                fontSize:"12px",
+                color:UI.textSecondary,
+              }}>
+                <div style={{color:UI.accent, fontWeight:600}}>
+                  📊 Vue 2D - Plan XY (vue de dessus)
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    />
   );
 }

@@ -2,10 +2,5 @@
 @tailwind components;
 @tailwind utilities;
 
-<<<<<<< HEAD
-html, body, #root { height: 100%; }
-=======
-/* Optionnel : reset minimal */
 html, body, #root { height: 100%; }
 * { box-sizing: border-box; }
->>>>>>> 6bbee61 (Ajout de la simulation 3D commentée)
